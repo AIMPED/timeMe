@@ -40,6 +40,16 @@ export default function Today() {
     return () => clearInterval(id)
   }, [])
 
+  // Browsers throttle timers in background tabs, and the clock may have been
+  // stopped on another device. Re-sync whenever the tab comes back.
+  useEffect(() => {
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') void load()
+    }
+    document.addEventListener('visibilitychange', onVisible)
+    return () => document.removeEventListener('visibilitychange', onVisible)
+  }, [load])
+
   async function act(fn: () => Promise<ClockStatus>) {
     setBusy(true)
     setError('')
@@ -66,9 +76,13 @@ export default function Today() {
   const open = status.open_period
   const running = open !== null && !open.dangling
   const driftSeconds = Math.floor((Date.now() - fetchedAt.current) / 1000)
-  const liveSeconds = open ? open.elapsed_minutes * 60 + driftSeconds : 0
+  const liveSeconds = open ? open.elapsed_seconds + driftSeconds : 0
   const today = status.today
-  const liveWorked = today.worked_minutes + (running ? Math.floor(driftSeconds / 60) : 0)
+  // worked_minutes already contains the open period floored to whole minutes,
+  // so only the minutes that have ticked over since the fetch get added.
+  const liveWorked =
+    today.worked_minutes +
+    (running && open ? Math.floor(liveSeconds / 60) - Math.floor(open.elapsed_seconds / 60) : 0)
   const liveDeviation = liveWorked - today.target_minutes
 
   return (

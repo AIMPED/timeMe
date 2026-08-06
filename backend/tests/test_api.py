@@ -85,6 +85,25 @@ def test_clock_in_then_out(admin_client):
     assert admin_client.post("/api/clock/out").status_code == 409
 
 
+def test_running_timer_keeps_second_precision(admin_client):
+    """Elapsed time must not be rounded to whole minutes: the page rebuilds its
+    timer from this value on every mount, and rounding made it jump backwards."""
+    admin_client.post("/api/clock/in")
+    try:
+        with SessionLocal() as db:
+            user = db.query(User).filter_by(username="admin").one()
+            period = (
+                db.query(Period).filter_by(user_id=user.id, end_at=None).one()
+            )
+            period.start_at = period.start_at - timedelta(seconds=95)
+            db.commit()
+
+        open_period_out = admin_client.get("/api/clock/status").json()["open_period"]
+        assert 95 <= open_period_out["elapsed_seconds"] <= 100
+    finally:
+        admin_client.post("/api/clock/out?force=true")
+
+
 def test_manual_period_and_day_totals(admin_client):
     day = date(2026, 5, 12)  # a Tuesday
     r = admin_client.post(

@@ -27,7 +27,7 @@ def _status(db: Session, user: User) -> ClockStatusOut:
         open_out = OpenPeriodOut(
             period_id=running.id,
             start=start_local.replace(tzinfo=None),
-            elapsed_minutes=int((now - running.start_at).total_seconds() // 60),
+            elapsed_seconds=int((now - running.start_at).total_seconds()),
             dangling=start_local.date() < today,
         )
 

@@ -105,7 +105,9 @@ class DayDetailOut(BaseModel):
 class OpenPeriodOut(BaseModel):
     period_id: int
     start: datetime
-    elapsed_minutes: int
+    # Seconds, not minutes: the client rebuilds its running timer from this on
+    # every mount, and rounding here would make the timer jump backwards.
+    elapsed_seconds: int
     dangling: bool
 
 

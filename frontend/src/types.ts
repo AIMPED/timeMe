@@ -81,7 +81,7 @@ export interface ClockStatus {
   open_period: {
     period_id: number
     start: string
-    elapsed_minutes: number
+    elapsed_seconds: number
     dangling: boolean
   } | null
   today: DayOut
