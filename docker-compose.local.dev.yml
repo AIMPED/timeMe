@@ -1,0 +1,76 @@
+# Local test stack. Standalone — do not combine with docker-compose.yml.
+#
+#   docker compose -f docker-compose.local.dev.yml up --build
+#   docker compose -f docker-compose.local.dev.yml exec app \
+#       python -m app.cli create-user dev --admin --password devpassword
+#   open http://localhost:8000
+#
+# Differences from production: no Caddy, plain HTTP (so the session cookie must
+# not be Secure), a throwaway secret and its own volume, and the backend
+# reloads when you edit backend/app.
+#
+# The SPA is baked into the image, so a frontend change needs `--build`. For a
+# fast frontend loop run `cd frontend && npm run dev` instead — its dev server
+# proxies /api straight to this container on port 8000.
+
+name: timeme-dev
+
+services:
+  app:
+    build: .
+    image: timeme:dev
+    container_name: timeme-dev
+    restart: unless-stopped
+    environment:
+      # Fine for localhost; never reuse this on a real deployment.
+      TIMEME_SECRET_KEY: local-development-only-not-a-secret
+      TIMEME_TIMEZONE: ${TIMEME_TIMEZONE:-Europe/Berlin}
+      TIMEME_DEFAULT_NOMINAL_MINUTES: ${TIMEME_DEFAULT_NOMINAL_MINUTES:-420}
+      TIMEME_SESSION_HOURS: 336
+      # Required: a Secure cookie is dropped by the browser over plain HTTP.
+      TIMEME_COOKIE_SECURE: "false"
+      TZ: ${TIMEME_TIMEZONE:-Europe/Berlin}
+    ports:
+      # Override with TIMEME_DEV_PORT if 8000 is taken. The Vite dev server
+      # proxies to 8000, so change vite.config.ts too if you move it.
+      - "127.0.0.1:${TIMEME_DEV_PORT:-8000}:8000"
+    volumes:
+      - timeme-dev-data:/data
+      # Live-reload the Python side without rebuilding the image.
+      - ./backend/app:/app/app:ro
+    command:
+      - uvicorn
+      - app.main:app
+      - --host
+      - 0.0.0.0
+      - --port
+      - "8000"
+      - --reload
+      - --reload-dir
+      - /app/app
+
+  # Opt-in, for testing the backup path itself:
+  #   docker compose -f docker-compose.local.dev.yml --profile backup up -d
+  backup:
+    profiles: ["backup"]
+    build:
+      context: .
+      dockerfile: scripts/Dockerfile.backup
+    image: timeme-backup:latest
+    container_name: timeme-dev-backup
+    depends_on:
+      - app
+    environment:
+      # Runs once at start-up regardless, which is the part worth testing.
+      BACKUP_AT: ${BACKUP_AT:-03:30}
+      KEEP_DAYS: ${BACKUP_KEEP_DAYS:-30}
+      TZ: ${TIMEME_TIMEZONE:-Europe/Berlin}
+    user: "10001:10001"
+    volumes:
+      - timeme-dev-data:/data
+      - ./backups-dev:/backups
+      - ./scripts/backup.sh:/usr/local/bin/backup.sh:ro
+    entrypoint: ["/bin/sh", "/usr/local/bin/backup.sh"]
+
+volumes:
+  timeme-dev-data:

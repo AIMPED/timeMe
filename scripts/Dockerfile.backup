@@ -1,0 +1,3 @@
+# Nothing but sqlite3 and a clock, so the backup loop can run unprivileged.
+FROM alpine:3.20
+RUN apk add --no-cache sqlite tzdata

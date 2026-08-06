@@ -1,0 +1,35 @@
+# Caddy runs on the VPS host; the app publishes only to 127.0.0.1, so this is
+# the single way in. Drop this into /etc/caddy/Caddyfile (or import it) and
+# reload with `sudo systemctl reload caddy`.
+#
+# Replace time.example.com with your domain and point its A/AAAA record at the
+# VPS first — Caddy provisions the certificate on the first request.
+
+time.example.com {
+	encode zstd gzip
+
+	# Matches TIMEME_BIND_PORT in .env.
+	reverse_proxy 127.0.0.1:8787
+
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options "nosniff"
+		X-Frame-Options "DENY"
+		Referrer-Policy "same-origin"
+		-Server
+	}
+
+	# The SPA shell must not be cached, or a deploy leaves stale asset links.
+	# Hashed files under /assets can be cached forever.
+	@assets path /assets/*
+	header @assets Cache-Control "public, max-age=31536000, immutable"
+	@html not path /assets/*
+	header @html Cache-Control "no-cache"
+
+	log {
+		output file /var/log/caddy/timeme.log {
+			roll_size 10MiB
+			roll_keep 5
+		}
+	}
+}
