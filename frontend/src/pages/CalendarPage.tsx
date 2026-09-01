@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { api } from '../api'
+import DayQuickEdit from '../components/DayQuickEdit'
 import { DAY_TYPE_LABELS, MONTH_NAMES, WEEKDAY_NAMES, hm, isoDate, signedHm } from '../format'
+import { useTouchLayout } from '../media'
 import type { CalendarMonth, DayOut } from '../types'
 
 const SHORT_TYPE: Partial<Record<string, string>> = {
@@ -13,7 +15,15 @@ const SHORT_TYPE: Partial<Record<string, string>> = {
   workday: 'WORK',
 }
 
-function DayCell({ day, onOpen }: { day: DayOut; onOpen: (d: string) => void }) {
+function DayCell({
+  day,
+  onOpen,
+  onMenu,
+}: {
+  day: DayOut
+  onOpen: (d: string) => void
+  onMenu: (d: string, at: { x: number; y: number }) => void
+}) {
   const classes = ['day-cell', day.effective_type]
   if (!day.in_month) classes.push('other-month')
   if (day.is_future) classes.push('future')
@@ -24,7 +34,15 @@ function DayCell({ day, onOpen }: { day: DayOut; onOpen: (d: string) => void }) 
   const showDeviation = !day.is_future && (day.target_minutes > 0 || day.worked_minutes > 0)
 
   return (
-    <button className={classes.join(' ')} onClick={() => onOpen(day.day)} title={day.note}>
+    <button
+      className={classes.join(' ')}
+      onClick={() => onOpen(day.day)}
+      onContextMenu={(e) => {
+        e.preventDefault()
+        onMenu(day.day, { x: e.clientX, y: e.clientY })
+      }}
+      title={day.note}
+    >
       <span className="dnum">{Number(day.day.slice(8, 10))}</span>
       {day.day_type && day.day_type !== 'workday' && (
         <span className="badge">{SHORT_TYPE[day.day_type]}</span>
@@ -50,6 +68,11 @@ export default function CalendarPage() {
   const month = Number(monthParam)
   const [data, setData] = useState<CalendarMonth | null>(null)
   const [error, setError] = useState('')
+  // `at: null` means "open as a sheet" — that is what a tap does on touch.
+  const [menu, setMenu] = useState<{ day: string; at: { x: number; y: number } | null } | null>(
+    null,
+  )
+  const touch = useTouchLayout()
 
   const load = useCallback(async () => {
     try {
@@ -65,6 +88,7 @@ export default function CalendarPage() {
   }, [load])
 
   function shift(delta: number) {
+    setMenu(null)
     const d = new Date(year, month - 1 + delta, 1)
     navigate(`/calendar/${d.getFullYear()}/${d.getMonth() + 1}`)
   }
@@ -73,6 +97,9 @@ export default function CalendarPage() {
   if (!data) return <div className="boot">Loading…</div>
 
   const t = data.month_totals
+  // The month payload already carries every day's periods, so the popover reads
+  // straight out of it and stays in step with a reload after each edit.
+  const menuDay = menu && data.weeks.flatMap((w) => w.days).find((d) => d.day === menu.day)
 
   return (
     <div className="page">
@@ -167,7 +194,14 @@ export default function CalendarPage() {
           {data.weeks.map((week) => (
             <div className="grid-row" key={`${week.iso_year}-${week.iso_week}`}>
               {week.days.map((day) => (
-                <DayCell key={day.day} day={day} onOpen={(d) => navigate(`/day/${d}`)} />
+                <DayCell
+                  key={day.day}
+                  day={day}
+                  onOpen={(d) =>
+                    touch ? setMenu({ day: d, at: null }) : navigate(`/day/${d}`)
+                  }
+                  onMenu={(d, at) => setMenu({ day: d, at })}
+                />
               ))}
               <div className="week-total">
                 <span className="wk">W{week.iso_week}</span>
@@ -192,11 +226,23 @@ export default function CalendarPage() {
           <span className="legend-item incomplete">Unclosed period</span>
         </div>
         <p className="muted small">
-          Click any day to edit its periods or mark it. Week totals cover the whole ISO week, including
-          days that fall in the neighbouring month.{' '}
+          {touch
+            ? 'Tap any day to set its type and add periods, or open the full editor from there.'
+            : 'Click any day to open its editor, or right-click it to set the day type and add periods on the spot.'}{' '}
+          Week totals cover the whole ISO week, including days that fall in the neighbouring month.{' '}
           <Link to="/">Back to today</Link>
         </p>
       </div>
+
+      {menu && menuDay && (
+        <DayQuickEdit
+          day={menuDay}
+          at={menu.at}
+          onChanged={load}
+          onClose={() => setMenu(null)}
+          onOpenEditor={() => navigate(`/day/${menu.day}`)}
+        />
+      )}
     </div>
   )
 }

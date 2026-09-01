@@ -714,4 +714,521 @@ tr.expanded td {
   main {
     padding: 0.75rem;
   }
+  .card {
+    padding: 0.85rem 0.7rem;
+  }
+
+  /* A whole week has to fit the screen — sideways scrolling to reach Friday is
+     no way to read a month. The week total drops to its own full-width row. */
+  .grid-head,
+  .grid-row {
+    grid-template-columns: repeat(7, minmax(0, 1fr));
+    min-width: 0;
+    gap: 3px;
+  }
+  .wd {
+    font-size: 0.62rem;
+    padding: 0 0.1rem 0.15rem;
+    text-align: center;
+  }
+  .wd.week-col {
+    display: none;
+  }
+  .week-total {
+    grid-column: 1 / -1;
+    flex-direction: row;
+    align-items: baseline;
+    justify-content: flex-start;
+    gap: 0.6rem;
+    padding: 0.3rem 0.5rem;
+  }
+  .day-cell {
+    min-height: 3.5rem;
+    padding: 0.25rem 0.3rem;
+    text-align: center;
+    justify-items: center;
+  }
+  .day-cell .dnum {
+    font-size: 0.78rem;
+  }
+  .day-cell .worked {
+    font-size: 0.78rem;
+  }
+  .day-cell .dev {
+    font-size: 0.64rem;
+  }
+  .day-cell .badge {
+    font-size: 0.5rem;
+    padding: 0 0.15rem;
+  }
+  /* "WORK" on every plain workday is just noise at this size. */
+  .day-cell .badge.faint {
+    display: none;
+  }
+  .day-cell .flag {
+    right: 0.15rem;
+    bottom: 0.1rem;
+    font-size: 0.6rem;
+  }
+
+  .month-head,
+  .month-nav {
+    gap: 0.35rem;
+  }
+  .month-nav h2 {
+    min-width: 0;
+    flex: 1;
+  }
+  .stat-row {
+    gap: 0.5rem 1.25rem;
+    justify-content: space-between;
+  }
+
+  /* Five columns of period editor do not fit a phone; each row becomes a card. */
+  table.periods.editable,
+  table.periods.editable tbody {
+    display: block;
+  }
+  table.periods.editable thead {
+    display: none;
+  }
+  table.periods.editable tr {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.6rem 0.5rem;
+    margin-bottom: 0.5rem;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+  }
+  table.periods.editable td {
+    display: block;
+    padding: 0;
+    border-bottom: none;
+  }
+  table.periods.editable td:has(input[type='text']) {
+    flex: 1 1 100%;
+  }
+  table.periods.editable td input[type='text'] {
+    width: 100%;
+  }
+  table.periods.editable td.num {
+    text-align: left;
+    color: var(--muted);
+    font-size: 0.85rem;
+  }
+  table.periods.editable td.num::before {
+    content: attr(data-label) ': ';
+  }
+  table.periods.editable td.actions {
+    flex: 1 1 100%;
+    justify-content: flex-start;
+  }
+  tr.open-period {
+    background: var(--warn-bg);
+  }
+}
+
+/* Touch: fingers need targets a mouse never did. Matches the breakpoint that
+   `useTouchLayout` uses to open the day sheet instead of the popover. */
+@media (pointer: coarse), (max-width: 640px) {
+  .dm-chip {
+    font-size: 0.9rem;
+    padding: 0.55rem 0.9rem;
+  }
+  .dm-periods li {
+    min-height: 2.75rem;
+    gap: 0.75rem;
+    font-size: 0.95rem;
+  }
+  .dm-periods .linklike,
+  .dm-foot .linklike {
+    padding: 0.6rem;
+    font-size: 0.95rem;
+  }
+  .dm-times .linklike {
+    padding: 0.6rem 0.4rem;
+  }
+  .dm-times button.primary {
+    min-height: 2.75rem;
+    padding: 0.5rem 1.2rem;
+  }
+  .time-field {
+    min-height: 2.75rem;
+    padding: 0.35rem 0.8rem;
+  }
+  .month-nav button {
+    min-width: 2.75rem;
+    min-height: 2.75rem;
+  }
+  /* Long-pressing a day should open the menu, not select the date text. */
+  .day-cell {
+    -webkit-touch-callout: none;
+    user-select: none;
+  }
+  /* Below 16px, iOS Safari zooms the page in on every focus. */
+  input,
+  select {
+    font-size: 16px;
+  }
+}
+
+/* -------------------------------------------------- day right-click popover */
+
+.day-menu {
+  position: fixed;
+  z-index: 40;
+  width: min(23rem, calc(100vw - 1rem));
+  max-height: calc(100dvh - 1rem);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  display: flex;
+  flex-direction: column;
+  gap: 0.7rem;
+  padding: 0.8rem;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: 0 6px 24px rgb(16 24 40 / 18%);
+}
+
+/* On touch the same content arrives as a bottom sheet: full width, scrollable,
+   and reachable with a thumb rather than pinned to a pointer that never was. */
+.dm-scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  display: flex;
+  align-items: flex-end;
+  background: rgb(8 12 18 / 45%);
+}
+
+.day-menu.sheet {
+  position: relative;
+  z-index: auto;
+  width: 100%;
+  max-height: 88dvh;
+  padding: 0.5rem 1rem calc(1rem + env(safe-area-inset-bottom));
+  border-width: 1px 0 0;
+  border-radius: 18px 18px 0 0;
+  box-shadow: 0 -8px 32px rgb(8 12 18 / 28%);
+}
+
+.dm-grip {
+  align-self: center;
+  width: 2.5rem;
+  height: 4px;
+  flex: none;
+  border-radius: 999px;
+  background: var(--border);
+  margin-bottom: 0.2rem;
+}
+
+.dm-head {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  flex: none;
+  padding-bottom: 0.6rem;
+  border-bottom: 1px solid var(--border);
+}
+
+/* The popover scrolls, so its parts must keep their height instead of squeezing. */
+.dm-section {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  flex: none;
+}
+
+.dm-section p {
+  margin: 0;
+}
+
+.dm-label {
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--muted);
+}
+
+.dm-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem;
+}
+
+.dm-chip {
+  font-size: 0.75rem;
+  padding: 0.2rem 0.55rem;
+  border-radius: 999px;
+}
+
+.dm-chip.on {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--accent-ink);
+  font-weight: 600;
+}
+
+.dm-times {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+
+.dm-dash {
+  color: var(--muted);
+}
+
+.dm-periods {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+
+.dm-periods li {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.85rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.dm-periods .dm-mins {
+  margin-left: auto;
+  color: var(--muted);
+}
+
+.dm-foot {
+  display: flex;
+  flex: none;
+  justify-content: space-between;
+  border-top: 1px solid var(--border);
+  padding-top: 0.5rem;
+}
+
+/* ---------------------------------------------------------- time picker */
+
+.time-field {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  line-height: 1.15;
+  padding: 0.25rem 0.6rem;
+  min-width: 4.6rem;
+}
+
+.tf-label {
+  font-size: 0.62rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--muted);
+}
+
+.tf-value {
+  font-size: 1.05rem;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.tp-scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  /* Flex with `margin: auto` on the sheet, so a dial taller than a landscape
+     phone scrolls instead of having its top clipped away. */
+  display: flex;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 0.75rem;
+  background: rgb(8 12 18 / 45%);
+}
+
+.tp-sheet {
+  margin: auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.9rem;
+  padding: 1.1rem;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 22px;
+  box-shadow: 0 10px 40px rgb(8 12 18 / 35%);
+}
+
+.tp-title {
+  align-self: flex-start;
+  margin: 0;
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+}
+
+.tp-readout,
+.tp-typed {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.tp-typed label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  font-size: 0.7rem;
+  color: var(--muted);
+}
+
+.tp-typed input {
+  width: 5rem;
+  font-size: 1.8rem;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+
+.tp-colon {
+  font-size: 2.2rem;
+  font-weight: 300;
+  color: var(--muted);
+}
+
+.tp-part {
+  font-size: 2.6rem;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  padding: 0.15rem 0.7rem;
+  border-radius: 10px;
+  background: var(--surface-2);
+}
+
+.tp-part.on {
+  background: color-mix(in srgb, var(--accent) 22%, var(--surface));
+  border-color: var(--accent);
+  color: var(--text);
+}
+
+.clock-dial {
+  position: relative;
+  border-radius: 50%;
+  background: var(--surface-2);
+  touch-action: none;
+  cursor: pointer;
+  user-select: none;
+}
+
+.clock-dial:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.clock-pin {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 7px;
+  height: 7px;
+  margin: -3.5px 0 0 -3.5px;
+  border-radius: 50%;
+  background: var(--accent);
+}
+
+/* Anchored at the centre and rotated, so its far end lands on the value. */
+.clock-hand {
+  position: absolute;
+  left: 50%;
+  bottom: 50%;
+  width: 2px;
+  transform-origin: bottom center;
+  background: var(--accent);
+}
+
+.clock-knob {
+  position: absolute;
+  left: 50%;
+  top: 0;
+  width: 34px;
+  height: 34px;
+  margin: -17px 0 0 -17px;
+  border-radius: 50%;
+  background: var(--accent);
+}
+
+/* When the hand points between labels, shrink it to a plain dot. */
+.clock-knob.bare {
+  width: 12px;
+  height: 12px;
+  margin: -6px 0 0 -6px;
+}
+
+.clock-num {
+  position: absolute;
+  transform: translate(-50%, -50%);
+  width: 34px;
+  height: 34px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  font-size: 0.95rem;
+  font-variant-numeric: tabular-nums;
+  pointer-events: none;
+}
+
+.clock-num.small {
+  font-size: 0.78rem;
+  color: var(--muted);
+}
+
+.clock-num.on {
+  color: var(--accent-ink);
+  font-weight: 700;
+}
+
+.tp-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  width: 100%;
+}
+
+.tp-actions .grow {
+  flex: 1;
+}
+
+.tp-toggle {
+  font-size: 0.8rem;
+}
+
+.kbd {
+  font-size: 0.7rem;
+  font-family: ui-monospace, monospace;
+  padding: 0.05rem 0.3rem;
+  margin-left: 0.35rem;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--surface);
+  color: var(--muted);
+}
+
+/* Start/end cell in the day editor's period table. */
+.time-cell {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+}
+
+.time-cell .pill {
+  margin-left: 0;
+}
+
+.time-cell button.linklike {
+  font-size: 0.75rem;
+  white-space: nowrap;
 }

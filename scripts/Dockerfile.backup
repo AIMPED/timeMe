@@ -1,3 +1,9 @@
 # Nothing but sqlite3 and a clock, so the backup loop can run unprivileged.
+# Build context is the repo root: docker build -f scripts/Dockerfile.backup .
 FROM alpine:3.20
 RUN apk add --no-cache sqlite tzdata
+
+# Baked in rather than bind-mounted, so the deployed script is the one CI built.
+# docker-compose.local.dev.yml still mounts over it for editing.
+COPY scripts/backup.sh /usr/local/bin/backup.sh
+RUN chmod 0755 /usr/local/bin/backup.sh

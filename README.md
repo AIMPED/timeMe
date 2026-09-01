@@ -30,43 +30,29 @@ through today.
 
 ## Deploy on the VPS
 
+Deployment is automatic: merging to `main` runs the tests, builds and pushes the
+images to GHCR, and restarts the app on the VPS. **[DEPLOYMENT.md](DEPLOYMENT.md)
+is the one-time setup walkthrough** — DNS, the deploy user, registry access,
+GitHub secrets and Caddy.
+
 Caddy is expected to already run on the host. The app publishes only to
-`127.0.0.1`, so Caddy is the sole route in.
-
-```bash
-git clone <your-repo> timeMe && cd timeMe
-
-cp .env.example .env
-sed -i "s/^TIMEME_SECRET_KEY=.*/TIMEME_SECRET_KEY=$(openssl rand -hex 32)/" .env
-$EDITOR .env                     # timezone, port, backup schedule
-
-# The backup sidecar runs as uid 10001, matching the app.
-mkdir -p backups && sudo chown 10001:10001 backups
-
-docker compose up -d --build
-
-# Create the first administrator (prompts for a password):
-docker compose exec app python -m app.cli create-user alice --admin --name "Alice"
-```
-
-Then point Caddy at it:
-
-```bash
-sudo cp Caddyfile /etc/caddy/Caddyfile   # edit the domain first
-sudo systemctl reload caddy
-```
-
-DNS for the domain must already resolve to the VPS — Caddy fetches the
-certificate on the first request.
+`127.0.0.1`, so Caddy is the sole route in. `docker-compose.yml` pulls prebuilt
+images and deliberately has no `build:` stanza; the VPS never compiles what it
+runs. To build locally, use `docker-compose.local.dev.yml`.
 
 ### Upgrading
 
+Merge to `main`. To check what is live, or to roll back to an earlier commit:
+
 ```bash
-git pull && docker compose up -d --build
+cd /srv/timeme
+grep TIMEME_TAG .env        # the commit SHA currently running
+./deploy.sh <older-sha>     # roll back
 ```
 
 The schema is created on start-up; the SQLite file lives in the `timeme-data`
-volume and is untouched by a rebuild.
+volume and is untouched by a deploy. There is no migration framework — see the
+schema-changes note in [DEPLOYMENT.md](DEPLOYMENT.md).
 
 ## Administration
 

@@ -1,7 +1,17 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { api } from '../api'
-import { DAY_TYPE_LABELS, hm, longDate, parseIsoDate, isoDate, signedHm } from '../format'
+import {
+  DAY_TYPE_LABELS,
+  endIsoDay,
+  hm,
+  isoDate,
+  longDate,
+  minutesBetween,
+  parseIsoDate,
+  signedHm,
+} from '../format'
+import TimeField from '../components/TimePicker'
 import type { DayDetail, DayTypeMark, PeriodOut } from '../types'
 
 const MARK_OPTIONS: { value: DayTypeMark | ''; label: string }[] = [
@@ -14,8 +24,8 @@ const MARK_OPTIONS: { value: DayTypeMark | ''; label: string }[] = [
   { value: 'off', label: 'Off (no target)' },
 ]
 
-/** "2026-08-06T09:00:00" -> "2026-08-06T09:00", the shape a datetime-local wants. */
-const forInput = (iso: string) => iso.slice(0, 16)
+/** "2026-08-06T09:00:00" -> "09:00". */
+const timeOf = (iso: string) => iso.slice(11, 16)
 
 function PeriodRow({
   period,
@@ -26,21 +36,23 @@ function PeriodRow({
   onChanged: (d: DayDetail) => void
   onError: (m: string) => void
 }) {
-  const [start, setStart] = useState(forInput(period.full_start))
-  const [end, setEnd] = useState(period.full_end ? forInput(period.full_end) : '')
+  const savedEnd = period.full_end ? timeOf(period.full_end) : ''
+  // The dates come from the period itself, never from the picker: a shift that
+  // began yesterday keeps yesterday's date when only its time is edited.
+  const startDay = period.full_start.slice(0, 10)
+
+  const [start, setStart] = useState(timeOf(period.full_start))
+  const [end, setEnd] = useState(savedEnd)
   const [note, setNote] = useState(period.note)
   const [busy, setBusy] = useState(false)
 
   useEffect(() => {
-    setStart(forInput(period.full_start))
-    setEnd(period.full_end ? forInput(period.full_end) : '')
+    setStart(timeOf(period.full_start))
+    setEnd(period.full_end ? timeOf(period.full_end) : '')
     setNote(period.note)
   }, [period.full_start, period.full_end, period.note])
 
-  const dirty =
-    start !== forInput(period.full_start) ||
-    end !== (period.full_end ? forInput(period.full_end) : '') ||
-    note !== period.note
+  const dirty = start !== timeOf(period.full_start) || end !== savedEnd || note !== period.note
 
   async function save() {
     setBusy(true)
@@ -48,8 +60,8 @@ function PeriodRow({
     try {
       onChanged(
         await api.updatePeriod(period.period_id, {
-          start: `${start}:00`,
-          end: end ? `${end}:00` : undefined,
+          start: `${startDay}T${start}:00`,
+          end: end ? `${endIsoDay(startDay, start, end)}T${end}:00` : undefined,
           clear_end: end === '',
           note,
         }),
@@ -78,13 +90,29 @@ function PeriodRow({
   return (
     <tr className={period.open ? 'open-period' : undefined}>
       <td>
-        <input type="datetime-local" value={start} onChange={(e) => setStart(e.target.value)} />
+        <div className="time-cell">
+          <TimeField label="Start" value={start} onChange={setStart} />
+          {period.continues_from_previous_day && <span className="pill">prev. day</span>}
+        </div>
       </td>
       <td>
-        <input type="datetime-local" value={end} onChange={(e) => setEnd(e.target.value)} />
-        {period.open && <span className="pill">open</span>}
+        <div className="time-cell">
+          <TimeField label="End" value={end} onChange={setEnd} />
+          <button
+            className="linklike"
+            title={end ? 'Leave it open instead' : 'Give it an end time'}
+            onClick={() => setEnd(end ? '' : start)}
+          >
+            {end ? 'no end' : 'set end'}
+          </button>
+          {period.open && <span className="pill">open</span>}
+          {period.continues_to_next_day && <span className="pill">next day</span>}
+        </div>
       </td>
-      <td className="num">{hm(period.minutes)}</td>
+      {/* The label only shows once the table stacks into cards on a phone. */}
+      <td className="num" data-label="On this day">
+        {hm(period.minutes)}
+      </td>
       <td>
         <input
           type="text"
@@ -110,8 +138,8 @@ export default function DayEditor() {
   const navigate = useNavigate()
   const [detail, setDetail] = useState<DayDetail | null>(null)
   const [error, setError] = useState('')
-  const [newStart, setNewStart] = useState('')
-  const [newEnd, setNewEnd] = useState('')
+  const [newStart, setNewStart] = useState('09:00')
+  const [newEnd, setNewEnd] = useState('17:00')
   const [newNote, setNewNote] = useState('')
   const [markNote, setMarkNote] = useState('')
 
@@ -120,8 +148,6 @@ export default function DayEditor() {
       const d = await api.day(day)
       setDetail(d)
       setMarkNote(d.day.note)
-      setNewStart(`${day}T09:00`)
-      setNewEnd(`${day}T17:00`)
       setError('')
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not load the day')
@@ -132,12 +158,31 @@ export default function DayEditor() {
     void load()
   }, [load])
 
+  const backToCalendar = useCallback(() => {
+    const d = parseIsoDate(day)
+    navigate(`/calendar/${d.getFullYear()}/${d.getMonth() + 1}`)
+  }, [day, navigate])
+
+  // Escape is the way out of the day, the same as closing a dialog.
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      if (e.key === 'Escape') backToCalendar()
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [backToCalendar])
+
   async function addPeriod(e: React.FormEvent) {
     e.preventDefault()
     setError('')
     try {
       setDetail(
-        await api.addPeriod(day, `${newStart}:00`, newEnd ? `${newEnd}:00` : null, newNote),
+        await api.addPeriod(
+          day,
+          `${day}T${newStart}:00`,
+          newEnd ? `${endIsoDay(day, newStart, newEnd)}T${newEnd}:00` : null,
+          newNote,
+        ),
       )
       setNewNote('')
     } catch (err) {
@@ -181,9 +226,10 @@ export default function DayEditor() {
           </div>
           <Link
             className="button"
+            title="Or press Esc"
             to={`/calendar/${monthDate.getFullYear()}/${monthDate.getMonth() + 1}`}
           >
-            Back to calendar
+            Back to calendar <span className="kbd">Esc</span>
           </Link>
         </div>
 
@@ -274,23 +320,17 @@ export default function DayEditor() {
         <form className="add-period" onSubmit={addPeriod}>
           <h3>Add a period</h3>
           <div className="row">
-            <label>
-              Start
-              <input
-                type="datetime-local"
-                value={newStart}
-                onChange={(e) => setNewStart(e.target.value)}
-                required
-              />
-            </label>
-            <label>
-              End
-              <input
-                type="datetime-local"
-                value={newEnd}
-                onChange={(e) => setNewEnd(e.target.value)}
-              />
-            </label>
+            <TimeField label="Start" value={newStart} onChange={setNewStart} />
+            <span className="dm-dash">→</span>
+            <TimeField label="End" value={newEnd} onChange={setNewEnd} />
+            <button
+              type="button"
+              className="linklike"
+              title={newEnd ? 'Record an open period instead' : 'Give it an end time'}
+              onClick={() => setNewEnd(newEnd ? '' : '17:00')}
+            >
+              {newEnd ? 'no end' : 'set end'}
+            </button>
             <label className="grow">
               Note
               <input
@@ -305,8 +345,11 @@ export default function DayEditor() {
             </button>
           </div>
           <p className="muted small">
-            Leaving the end empty records an open period. A period may run past midnight; its minutes
-            are split between the two days.
+            {newEnd === ''
+              ? 'No end: an open period, counted as zero until you close it.'
+              : newEnd <= newStart
+                ? 'Runs past midnight — its minutes are split between the two days.'
+                : `${hm(minutesBetween(newStart, newEnd))} on this day.`}
           </p>
         </form>
       </div>

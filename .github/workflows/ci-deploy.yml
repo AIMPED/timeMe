@@ -1,0 +1,124 @@
+name: CI / Deploy
+
+# Tests run on every PR. A merge to main additionally builds both images,
+# pushes them to GHCR tagged with the commit SHA, and deploys that exact SHA
+# to the VPS. Nothing is built on the VPS: the artifact the tests passed
+# against is the artifact that runs.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+# Never let two deploys race. A queued run waits rather than being cancelled,
+# so the newest commit always ends up as the deployed one.
+concurrency:
+  group: ci-deploy-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  REGISTRY: ghcr.io
+  # Lowercase is mandatory: GHCR rejects mixed-case image names.
+  OWNER: aimped
+
+jobs:
+  test-backend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: backend/requirements-dev.txt
+
+      - name: Install dependencies
+        run: pip install -r backend/requirements-dev.txt
+
+      # conftest.py points TIMEME_DB_PATH at a temp dir and supplies a dummy
+      # secret key, so no environment setup is needed here.
+      - name: pytest
+        run: python -m pytest tests -q
+        working-directory: backend
+
+  test-frontend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+        working-directory: frontend
+
+      # The image build runs tsc too (via `npm run build`), but failing here
+      # takes 40s instead of waiting on a full multi-stage build.
+      - name: Typecheck
+        run: npm run typecheck
+        working-directory: frontend
+
+  build-push:
+    needs: [test-backend, test-frontend]
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      matrix:
+        include:
+          - name: timeme
+            dockerfile: Dockerfile
+          - name: timeme-backup
+            dockerfile: scripts/Dockerfile.backup
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          # Automatically provided; no PAT needed to push.
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ${{ matrix.dockerfile }}
+          push: true
+          # Change to linux/arm64 if the VPS is ARM (Hetzner CAX, Oracle
+          # Ampere, …) — an amd64 image will not start there.
+          platforms: linux/amd64
+          tags: |
+            ${{ env.REGISTRY }}/${{ env.OWNER }}/${{ matrix.name }}:${{ github.sha }}
+            ${{ env.REGISTRY }}/${{ env.OWNER }}/${{ matrix.name }}:latest
+          # Separate scopes, or the two images evict each other's layers.
+          cache-from: type=gha,scope=${{ matrix.name }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.name }}
+
+  deploy:
+    needs: build-push
+    runs-on: ubuntu-latest
+    steps:
+      - name: Pull and restart on the VPS
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          script_stop: true
+          # deploy.sh lives on the VPS (see its header). It waits for the new
+          # container to report healthy and rolls back to the previous tag if
+          # it does not, so a non-zero exit here means the old version is
+          # still serving.
+          script: /srv/timeme/deploy.sh ${{ github.sha }}

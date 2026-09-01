@@ -29,6 +29,27 @@ export function parseIsoDate(s: string): Date {
   return new Date(y, m - 1, d)
 }
 
+/** The ISO date one day after the given one. */
+export function nextIsoDay(iso: string): string {
+  const d = parseIsoDate(iso)
+  d.setDate(d.getDate() + 1)
+  return isoDate(d)
+}
+
+/** Minutes from one "HH:MM" to a later one on the same day. */
+export function minutesBetween(start: string, end: string): number {
+  const mins = (s: string) => Number(s.slice(0, 2)) * 60 + Number(s.slice(3, 5))
+  return mins(end) - mins(start)
+}
+
+/**
+ * Which day an end time falls on, given the start. An end at or before the
+ * start means the period ran past midnight.
+ */
+export function endIsoDay(startDay: string, startTime: string, endTime: string): string {
+  return endTime <= startTime ? nextIsoDay(startDay) : startDay
+}
+
 export const MONTH_NAMES = [
   'January', 'February', 'March', 'April', 'May', 'June',
   'July', 'August', 'September', 'October', 'November', 'December',
