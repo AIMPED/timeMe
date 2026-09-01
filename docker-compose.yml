@@ -21,6 +21,9 @@ services:
     # Only Caddy on the host needs to reach this; it is not exposed publicly.
     ports:
       - "127.0.0.1:${TIMEME_BIND_PORT:-8787}:8000"
+    networks:
+      - default
+      - web
 
   backup:
     image: ghcr.io/aimped/timeme-backup:${TIMEME_TAG:-latest}
@@ -41,6 +44,10 @@ services:
       - timeme-data:/data
       - ./backups:/backups
     entrypoint: ["/bin/sh", "/usr/local/bin/backup.sh"]
+
+networks:
+  web:
+    external: true
 
 volumes:
   timeme-data:
