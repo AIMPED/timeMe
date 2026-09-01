@@ -2,22 +2,22 @@
 # Pull a published image tag and restart the stack. Run by CI over SSH, and by
 # hand for rollbacks:
 #
-#   /srv/timeme/deploy.sh <commit-sha>
+#   /opt/deployed/timeMe/deploy.sh <commit-sha>
 #
 # This file is not read from the repo at deploy time — the VPS holds no source
 # checkout. Copy it once and re-copy it if it changes here:
 #
-#   scp scripts/deploy.sh deploy@vps:/srv/timeme/deploy.sh
-#   ssh deploy@vps chmod +x /srv/timeme/deploy.sh
+#   scp scripts/deploy.sh deploy@vps:/opt/deployed/timeMe/deploy.sh
+#   ssh deploy@vps chmod +x /opt/deployed/timeMe/deploy.sh
 #
-# /srv/timeme must contain docker-compose.yml, .env and a backups/ directory.
+# /opt/deployed/timeMe must contain docker-compose.yml, .env and a backups/ directory.
 # The tag is written into .env so a later plain `docker compose up -d` brings
 # up the same image rather than drifting to :latest.
 
 set -eu
 
 TAG="${1:?usage: deploy.sh <image-tag>}"
-DIR="${TIMEME_DIR:-/srv/timeme}"
+DIR="${TIMEME_DIR:-/opt/deployed/timeMe}"
 # The app container must report healthy within this window or we roll back.
 # Generous: the image's HEALTHCHECK has a 10s start period and a 30s interval.
 HEALTH_TIMEOUT=90

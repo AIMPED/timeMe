@@ -121,4 +121,4 @@ jobs:
           # container to report healthy and rolls back to the previous tag if
           # it does not, so a non-zero exit here means the old version is
           # still serving.
-          script: /srv/timeme/deploy.sh ${{ github.sha }}
+          script: /opt/deployed/timeMe/deploy.sh ${{ github.sha }}
