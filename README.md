@@ -102,6 +102,76 @@ The calendar page has **CSV: days** (one row per day with worked, target and
 deviation, plus a total row) and **CSV: periods** (one row per clock-in/out
 pair). Both are semicolon-separated with a BOM, so Excel opens them directly.
 
+## Import
+
+There is no import UI. To load history from before you started using timeMe —
+say, hours you kept in a spreadsheet — use `backend/scripts/import_periods.py`.
+It talks to the running API as you, so it obeys the same rules as the day
+editor: times are local wall-clock, periods may not overlap, and worked/target/
+deviation are never imported (they are always recomputed from the periods, the
+day types and the nominal-hours history).
+
+Feed it a **periods** CSV (one clock-in/out slice per row) and, optionally, a
+**marks** CSV for absences. Both are semicolon-separated with a header row;
+column names are case-insensitive, and a leading BOM (as written by the export)
+is tolerated, so a file exported from timeMe re-imports as-is.
+
+`periods` — columns `Date;Start;End;Note`:
+
+```
+Date;Start;End;Note
+2026-01-06;08:30;12:00;
+2026-01-06;12:45;17:15;afternoon
+2026-01-07;22:00;02:30;night shift     # End <= Start rolls over to the next day
+2026-01-08;09:00;;still-open slice      # blank End = an open period
+```
+
+`marks` — columns `Date;Type;Note`, where `Type` is one of `workday`,
+`half_day`, `vacation`, `sick`, `holiday`, `off`:
+
+```
+Date;Type;Note
+2026-01-12;vacation;
+2026-01-13;sick;flu
+```
+
+Run it against a running backend. The password is read from `TIMEME_PASSWORD`,
+or prompted for. `--dry-run` prints every request without sending anything —
+always preview first.
+
+```bash
+cd backend
+TIMEME_PASSWORD=... .venv/bin/python scripts/import_periods.py \
+    --base-url http://localhost:8000 --username alice \
+    --periods history_periods.csv --marks history_marks.csv --dry-run
+```
+
+Rows that can't be placed are reported and skipped, not fatal: a row missing
+`Date`/`Start`, a period that overlaps an existing one (the API returns `409`),
+or an unknown mark `Type`. There is no natural key, so **re-running an import
+creates duplicates** — import into an empty range, or clear it first.
+
+`--wipe-range START END` (inclusive `YYYY-MM-DD` dates) does that clearing: it
+deletes every period whose own start falls in the range and clears any day marks
+there, then the import can run cleanly. It runs before the import, or on its own
+without `--periods`. A period that merely spills into the range from an earlier
+day is left alone. This permanently deletes real data (each delete is written to
+`audit_log`, but there is no undo), so dry-run it first:
+
+```bash
+# preview what would be removed — reads live data, changes nothing
+.venv/bin/python scripts/import_periods.py --base-url http://localhost:8000 \
+    --username alice --wipe-range 2026-01-01 2026-01-31 --dry-run
+
+# clean re-import of a month
+TIMEME_PASSWORD=... .venv/bin/python scripts/import_periods.py \
+    --base-url http://localhost:8000 --username alice \
+    --wipe-range 2026-01-01 2026-01-31 \
+    --periods history_periods.csv --marks history_marks.csv
+```
+
+Both scripts need only `httpx`, which is already in `requirements-dev.txt`.
+
 ## Configuration
 
 All settings are `TIMEME_`-prefixed environment variables; see `.env.example`.
