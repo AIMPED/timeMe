@@ -203,6 +203,16 @@ export function TimePickerDialog({
     return () => window.removeEventListener('keydown', onKey, true)
   }, [onCancel])
 
+  const confirm = () => onConfirm(`${pad(hour)}:${pad(minute)}`)
+
+  // The picker can sit inside a form (adding a period), so Enter in the typed
+  // fields must confirm the time here rather than submit that form.
+  function onTypedKey(e: React.KeyboardEvent) {
+    if (e.key !== 'Enter') return
+    e.preventDefault()
+    confirm()
+  }
+
   function pick(v: number) {
     if (mode === 'hour') setHour(v)
     else setMinute(v)
@@ -229,6 +239,7 @@ export function TimePickerDialog({
                 max={23}
                 value={pad(hour)}
                 autoFocus
+                onKeyDown={onTypedKey}
                 onChange={(e) =>
                   setHour(Math.max(0, Math.min(23, Number(e.target.value) || 0)))
                 }
@@ -242,6 +253,7 @@ export function TimePickerDialog({
                 min={0}
                 max={59}
                 value={pad(minute)}
+                onKeyDown={onTypedKey}
                 onChange={(e) =>
                   setMinute(Math.max(0, Math.min(59, Number(e.target.value) || 0)))
                 }
@@ -252,6 +264,7 @@ export function TimePickerDialog({
           <>
             <div className="tp-readout">
               <button
+                type="button"
                 className={`tp-part ${mode === 'hour' ? 'on' : ''}`}
                 onClick={() => setMode('hour')}
               >
@@ -259,6 +272,7 @@ export function TimePickerDialog({
               </button>
               <span className="tp-colon">:</span>
               <button
+                type="button"
                 className={`tp-part ${mode === 'minute' ? 'on' : ''}`}
                 onClick={() => setMode('minute')}
               >
@@ -277,6 +291,7 @@ export function TimePickerDialog({
 
         <div className="tp-actions">
           <button
+            type="button"
             className="linklike tp-toggle"
             title={typing ? 'Pick on the dial' : 'Type the time'}
             onClick={() => setTyping(!typing)}
@@ -284,8 +299,10 @@ export function TimePickerDialog({
             {typing ? '◷ Dial' : '⌨ Keyboard'}
           </button>
           <span className="grow" />
-          <button onClick={onCancel}>Cancel</button>
-          <button className="primary" onClick={() => onConfirm(`${pad(hour)}:${pad(minute)}`)}>
+          <button type="button" onClick={onCancel}>
+            Cancel
+          </button>
+          <button type="button" className="primary" onClick={confirm}>
             OK
           </button>
         </div>
@@ -307,7 +324,7 @@ export default function TimeField({
   const [open, setOpen] = useState(false)
   return (
     <>
-      <button className="time-field" onClick={() => setOpen(true)}>
+      <button type="button" className="time-field" onClick={() => setOpen(true)}>
         <span className="tf-label">{label}</span>
         <span className="tf-value">{value || '--:--'}</span>
       </button>
