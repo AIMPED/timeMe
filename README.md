@@ -45,7 +45,7 @@ runs. To build locally, use `docker-compose.local.dev.yml`.
 Merge to `main`. To check what is live, or to roll back to an earlier commit:
 
 ```bash
-cd /srv/timeme
+cd /opt/deployed/timeMe
 grep TIMEME_TAG .env        # the commit SHA currently running
 ./deploy.sh <older-sha>     # roll back
 ```
