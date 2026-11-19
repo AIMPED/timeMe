@@ -8,7 +8,8 @@ from app.config import get_settings
 from app.db import SessionLocal, init_db
 from app.main import app
 from app.models import AuditLog, NominalRate, Period, User
-from app.security import hash_password
+from app.routers.auth import login_throttle
+from app.security import LoginThrottle, hash_password
 
 TZ = get_settings().tz
 
@@ -52,6 +53,58 @@ def test_login_rejects_bad_password(client):
     client.cookies.clear()
     r = client.post("/api/auth/login", json={"username": "admin", "password": "wrong"})
     assert r.status_code == 401
+
+
+def test_repeated_bad_logins_are_throttled(client):
+    login_throttle.reset()
+    client.cookies.clear()
+    try:
+        for _ in range(login_throttle.max_failures):
+            r = client.post("/api/auth/login", json={"username": "admin", "password": "wrong"})
+            assert r.status_code == 401
+
+        # Blocked now, and the right password does not get past the block.
+        r = client.post(
+            "/api/auth/login", json={"username": "admin", "password": "adminpass123"}
+        )
+        assert r.status_code == 429
+        assert int(r.headers["Retry-After"]) > 0
+    finally:
+        login_throttle.reset()
+
+
+def test_successful_login_clears_failures(client):
+    login_throttle.reset()
+    client.cookies.clear()
+    try:
+        for _ in range(login_throttle.max_failures - 1):
+            client.post("/api/auth/login", json={"username": "admin", "password": "wrong"})
+        r = client.post(
+            "/api/auth/login", json={"username": "admin", "password": "adminpass123"}
+        )
+        assert r.status_code == 200
+        # The count started over, so one more mistake is still only a 401.
+        r = client.post("/api/auth/login", json={"username": "admin", "password": "wrong"})
+        assert r.status_code == 401
+    finally:
+        login_throttle.reset()
+        client.cookies.clear()
+
+
+def test_throttle_releases_after_the_window(monkeypatch):
+    now = [1000.0]
+    monkeypatch.setattr("app.security.time.monotonic", lambda: now[0])
+    throttle = LoginThrottle(max_failures=2, window_seconds=60)
+
+    throttle.fail("1.2.3.4")
+    now[0] += 30
+    throttle.fail("1.2.3.4")
+    assert throttle.retry_after("1.2.3.4") == 30
+    assert throttle.retry_after("5.6.7.8") == 0
+
+    # The first failure ages out; one left is under the limit.
+    now[0] += 30
+    assert throttle.retry_after("1.2.3.4") == 0
 
 
 def test_endpoints_require_a_session(client):
