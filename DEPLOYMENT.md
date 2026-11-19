@@ -6,7 +6,7 @@ step. This page is the one-time setup, in order, followed by what to expect
 afterwards.
 
 Values used throughout as examples: domain `time.systemsandbox.work`, VPS user
-`deploy`, app directory `/srv/timeme`, registry namespace
+`deploy`, app directory `/opt/deployed/timeMe`, registry namespace
 `ghcr.io/aimped`.
 
 ## How it fits together
@@ -18,7 +18,7 @@ flowchart TD
     T1 --> B["build-push<br/>2 images, tagged with the commit SHA"]
     T2 --> B
     B --> G[("ghcr.io/aimped<br/>timeme · timeme-backup")]
-    B --> D["deploy<br/>ssh → /srv/timeme/deploy.sh SHA"]
+    B --> D["deploy<br/>ssh → /opt/deployed/timeMe/deploy.sh SHA"]
     D --> P["docker compose pull + up -d"]
     G --> P
     P --> H{"container healthy<br/>within 90s?"}
@@ -76,10 +76,10 @@ only for deploys and should have no other use.
 
 ## Step 3 — The application directory
 
-The VPS needs no source checkout. Four things live in `/srv/timeme`:
+The VPS needs no source checkout. Four things live in `/opt/deployed/timeMe`:
 
 ```
-/srv/timeme/
+/opt/deployed/timeMe/
 ├── docker-compose.yml   copied from the repo
 ├── deploy.sh            copied from the repo, executable
 ├── .env                 written by hand, never in git
@@ -89,16 +89,16 @@ The VPS needs no source checkout. Four things live in `/srv/timeme`:
 Create it:
 
 ```bash
-sudo mkdir -p /srv/timeme
-sudo chown deploy:deploy /srv/timeme
+sudo mkdir -p /opt/deployed/timeMe
+sudo chown deploy:deploy /opt/deployed/timeMe
 ```
 
 From your workstation, in a clone of the repo:
 
 ```bash
-scp docker-compose.yml Caddyfile deploy@<VPS-IP>:/srv/timeme/
-scp scripts/deploy.sh deploy@<VPS-IP>:/srv/timeme/deploy.sh
-ssh deploy@<VPS-IP> chmod +x /srv/timeme/deploy.sh
+scp docker-compose.yml Caddyfile deploy@<VPS-IP>:/opt/deployed/timeMe/
+scp scripts/deploy.sh deploy@<VPS-IP>:/opt/deployed/timeMe/deploy.sh
+ssh deploy@<VPS-IP> chmod +x /opt/deployed/timeMe/deploy.sh
 ```
 
 `Caddyfile` is only staged here for Step 7 — Caddy reads it from `/etc/caddy/`.
@@ -108,7 +108,7 @@ they are not updated by a deploy.
 Then, on the VPS as `deploy`:
 
 ```bash
-cd /srv/timeme
+cd /opt/deployed/timeMe
 
 # The backup sidecar runs as uid 10001, matching the app.
 mkdir -p backups && sudo chown 10001:10001 backups
@@ -208,7 +208,7 @@ While in Settings, check **Actions → General → Workflow permissions** is set
 Install the `Caddyfile` staged in Step 3, with your own domain substituted:
 
 ```bash
-sudo cp /srv/timeme/Caddyfile /etc/caddy/Caddyfile
+sudo cp /opt/deployed/timeMe/Caddyfile /etc/caddy/Caddyfile
 sudo sed -i 's/time\.example\.com/time.systemsandbox.work/' /etc/caddy/Caddyfile
 sudo caddy validate --config /etc/caddy/Caddyfile
 sudo systemctl reload caddy
@@ -226,7 +226,7 @@ four jobs, roughly two minutes end to end.
 When it goes green, create the first administrator on the VPS:
 
 ```bash
-cd /srv/timeme
+cd /opt/deployed/timeMe
 docker compose exec app python -m app.cli create-user alice --admin --name "Alice"
 ```
 
@@ -237,7 +237,7 @@ Then open `https://time.systemsandbox.work` and sign in.
 ## Verifying a deployment
 
 ```bash
-cd /srv/timeme
+cd /opt/deployed/timeMe
 
 grep TIMEME_TAG .env                 # which commit is live
 docker compose ps                    # both containers up, app healthy
@@ -258,7 +258,7 @@ still serving.
 To go back deliberately, run the same script with an older commit SHA:
 
 ```bash
-/srv/timeme/deploy.sh 89aeeef0c1b2c3d4e5f6...
+/opt/deployed/timeMe/deploy.sh 89aeeef0c1b2c3d4e5f6...
 ```
 
 Any SHA still present in the registry works. Since the data lives in the
@@ -299,6 +299,7 @@ as a manual operation: take a backup, apply the change deliberately, then deploy
 | `deploy` job: connection timeout | `VPS_HOST` is a proxied hostname instead of the IP, or port 22 is firewalled. |
 | `build-push`: `denied: permission_denied` | Workflow permissions are read-only (Step 6). |
 | On the VPS: `denied` / `unauthorized` on pull | The `docker login ghcr.io` in Step 5 was skipped, or the token lacks `read:packages`. |
+| On the VPS: `denied` on pull, packages are public | The `read:packages` token from Step 5 expired. Docker sends the stale login instead of pulling anonymously. Run `docker logout ghcr.io`, then re-run the failed `deploy` job. |
 | `exec format error` in the app logs | Image architecture mismatch. Set `platforms: linux/arm64` in `.github/workflows/ci-deploy.yml` for an ARM VPS. |
 | Site unreachable, Caddy logs show ACME failures | The DNS record is proxied. Set it to DNS only (Step 1). |
 | Browser cannot log in, cookie rejected | `TIMEME_COOKIE_SECURE=true` over plain HTTP. Use HTTPS, which Caddy provides. |
